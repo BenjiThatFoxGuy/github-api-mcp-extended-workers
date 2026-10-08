@@ -4,9 +4,22 @@
 	"private": true,
 	"scripts": {
 		"deploy": "wrangler deploy",
-		"dev": "wrangler dev"
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"cf-typegen": "wrangler types",
+		"type-check": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@cloudflare/workers-oauth-provider": "^0.8.1",
+		"agents": "^0.17.1",
+		"hono": "^4.12.27",
+		"just-pick": "^4.2.0",
+		"octokit": "^5.0.5",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
-		"wrangler": "^4.148.0"
+		"@cloudflare/workers-types": "^5.20261008.1",
+		"typescript": "6.0.3",
+		"wrangler": "^4.105.0"
 	}
 }
