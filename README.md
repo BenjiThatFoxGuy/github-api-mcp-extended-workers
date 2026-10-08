@@ -1,12 +1,14 @@
-# GitHub Stars MCP
+# GitHub Extended MCP
 
-A remote [MCP](https://modelcontextprotocol.io) server on Cloudflare Workers that lets Claude manage your **GitHub starred repos and Star Lists**.
+A remote [MCP](https://modelcontextprotocol.io) server on Cloudflare Workers that extends what Claude can do with your GitHub account beyond the standard GitHub tools. It signs you in with GitHub OAuth, so it works as a custom connector in claude.ai (or any MCP client that supports remote servers with OAuth).
 
-Star Lists only exist in GitHub's GraphQL API (there is no REST endpoint), and no existing connector exposes them. This server wraps the GraphQL calls as MCP tools and signs you in with GitHub OAuth, so it works as a custom connector in claude.ai (or any MCP client that supports remote servers with OAuth).
+The first feature set is **starred repos and Star Lists**. Star Lists only exist in GitHub's GraphQL API (there is no REST endpoint), and no existing connector exposes them, so this server wraps those GraphQL calls as MCP tools. More account-level features can be added alongside them over time.
 
 ![The connector in claude.ai, showing its read-only and write/delete tools](docs/claude-connector.png)
 
 ## Tools
+
+Stars and lists (current):
 
 | Tool | Kind | What it does |
 |---|---|---|

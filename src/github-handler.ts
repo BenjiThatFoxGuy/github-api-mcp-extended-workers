@@ -40,9 +40,9 @@ app.get("/authorize", async (c) => {
 		client: await c.env.OAUTH_PROVIDER.lookupClient(clientId),
 		csrfToken,
 		server: {
-			description: "This is a demo MCP Remote Server using GitHub for authentication.",
+			description: "Lets Claude work with your GitHub account beyond what the standard GitHub tools cover, starting with starred repos and Star Lists. Signs you in with GitHub.",
 			logo: "https://avatars.githubusercontent.com/u/314135?s=200&v=4",
-			name: "Cloudflare GitHub MCP Server",
+			name: "GitHub Extended MCP",
 		},
 		setCookie,
 		state: { oauthReqInfo },

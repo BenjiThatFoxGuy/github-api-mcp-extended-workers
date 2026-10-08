@@ -14,7 +14,7 @@ export async function gql<T>(
 		headers: {
 			Authorization: `Bearer ${token}`,
 			"Content-Type": "application/json",
-			"User-Agent": "github-stars-mcp",
+			"User-Agent": "github-extended-mcp",
 		},
 		body: JSON.stringify({ query, variables }),
 	});

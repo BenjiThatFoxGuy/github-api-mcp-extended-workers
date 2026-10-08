@@ -27,7 +27,7 @@ const json = (data: unknown) => ({
 
 // the mcp tool = one durable object instance per session. init() registers the tools.
 export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
-	server = new McpServer({ name: "github-stars", version: "1.0.0" });
+	server = new McpServer({ name: "github-extended", version: "1.0.0" });
 
 	async init() {
 		// second lock behind the callback allowlist: no tools at all for anyone else
