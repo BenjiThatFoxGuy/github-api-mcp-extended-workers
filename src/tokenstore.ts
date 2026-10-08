@@ -50,3 +50,8 @@ export async function loadTokens(env: Env, login: string): Promise<StoredTokens 
 		return null; // key rotated or corrupt entry: fall back to the session's own token
 	}
 }
+
+// forget the stored github tokens for a login (used when the last session is terminated)
+export async function deleteTokens(env: Env, login: string) {
+	await env.OAUTH_KV.delete(keyName(login));
+}

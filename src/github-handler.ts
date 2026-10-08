@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
 import { Octokit } from "octokit";
+import { registerAdmin } from "./admin";
 import { isAllowedLogin } from "./allowlist";
 import type { Props } from "./types";
 import { fetchUpstreamAuthToken, getUpstreamAuthorizeUrl } from "./utils";
@@ -20,7 +21,13 @@ import {
 const app = new Hono<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>();
 
 app.get("/authorize", async (c) => {
-	const oauthReqInfo = await c.env.OAUTH_PROVIDER.parseAuthRequest(c.req.raw);
+	let oauthReqInfo: AuthRequest;
+	try {
+		oauthReqInfo = await c.env.OAUTH_PROVIDER.parseAuthRequest(c.req.raw);
+	} catch {
+		// unknown or removed client, bad redirect uri, and so on: a clean 400, not a stack trace
+		return c.text("Invalid request", 400);
+	}
 	const { clientId } = oauthReqInfo;
 	if (!clientId) {
 		return c.text("Invalid request", 400);
@@ -211,5 +218,8 @@ app.get("/callback", async (c) => {
 		headers,
 	});
 });
+
+// browser-only panel for ending sessions (see admin.ts)
+registerAdmin(app);
 
 export { app as GitHubHandler };

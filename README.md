@@ -97,6 +97,16 @@ All of these are described in [`.dev.vars.example`](.dev.vars.example). Set them
 
 **Session lifetime.** By default a Claude session lasts 12 hours and then reconnects through GitHub. `SESSION_TTL_SECONDS` changes that, `REFRESH_TOKEN_TTL_SECONDS` lets Claude renew a session without a new login (the server also refreshes GitHub's token if your OAuth app has expiring user tokens enabled), and `TIE_SESSION_TO_GITHUB_TOKEN=false` makes the session lifetime independent of GitHub's token.
 
+## Admin panel
+
+Open `https://<your-host>/admin` in a browser. You sign in with GitHub (the same OAuth app, through its own `/callback/admin` path, which GitHub accepts because it sits under your registered `/callback`), and only allowlisted accounts get in. The panel lists every connected client with where it signs in from and when, and lets you:
+
+- **Terminate** a session. The client loses access and can connect again.
+- **Remove client** to also forget it, so it has to register and be approved again.
+- **Terminate all** sessions.
+
+It is a web page on purpose and there is no MCP tool for any of this, so an agent can never list, create or end sessions. The panel session is its own signed cookie that lasts 30 minutes, every action needs a CSRF token, and it never holds a GitHub token. Because Workers KV is eventually consistent, a termination can take up to about a minute to reach every Cloudflare location.
+
 ## Security
 
 The server is on the public internet, so access is locked down in layers:
