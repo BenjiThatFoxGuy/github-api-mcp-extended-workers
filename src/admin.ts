@@ -3,7 +3,8 @@
 //
 //   /admin               panel (or the sign-in card when there is no panel session)
 //   /admin/login         starts a github login just for the panel
-//   /callback/admin      where github sends you back (a subpath of the registered /callback)
+//   /callback            where github sends you back, shared with the mcp login: the one-time
+//                        state value tells the two apart (see handleAdminCallback)
 //   /admin/terminate     POST: end one session
 //   /admin/remove        POST: end a client's sessions and forget the client
 //   /admin/terminate-all POST: end every session
@@ -226,6 +227,54 @@ async function form(c: Ctx, s: Session) {
 
 const back = (done: string) => new Response(null, { status: 303, headers: { Location: `/admin?done=${done}`, "Cache-Control": "no-store" } });
 
+// called first by the shared /callback route. returns a response when this request belongs to a
+// panel login (its state was issued by /admin/login), or null so the normal mcp login continues.
+export async function handleAdminCallback(c: Ctx): Promise<Response | null> {
+	const state = c.req.query("state") ?? "";
+	if (!state || (await c.env.OAUTH_KV.get(`admin-state:${state}`)) === null) return null;
+
+	const bound = cookie(c.req.raw, STATE_COOKIE);
+	if (!bound || !sameString(bound, state)) {
+		return signInPage("That sign-in expired. Try again.");
+	}
+	await c.env.OAUTH_KV.delete(`admin-state:${state}`); // one use
+
+	const [upstream, err] = await fetchUpstreamAuthToken({
+		client_id: c.env.GITHUB_CLIENT_ID,
+		client_secret: c.env.GITHUB_CLIENT_SECRET,
+		code: c.req.query("code"),
+		redirect_uri: new URL("/callback", c.req.url).href,
+		upstream_url: "https://github.com/login/oauth/access_token",
+	});
+	if (err) return signInPage("GitHub sign-in failed. Try again.");
+
+	const me = await fetch("https://api.github.com/user", {
+		headers: { Authorization: `Bearer ${upstream!.accessToken}`, "User-Agent": "github-extended-mcp" },
+	});
+	const login = me.ok ? ((await me.json()) as { login?: string }).login : undefined;
+	// the github token is dropped here: the panel keeps only a signed cookie
+	if (!isAllowedLogin(login, c.env.ALLOWED_GITHUB_LOGINS)) {
+		console.warn(`rejected admin login attempt from ${login}`);
+		return respond(page("Not allowed", `<main class="bf-container"><h1 class="bf-title">Not allowed</h1><p class="bf-lede">This account cannot use this panel.</p></main>`), 403, {
+			"Set-Cookie": setCookie(STATE_COOKIE, "", 0),
+		});
+	}
+	const session = await signSession(c.env.COOKIE_ENCRYPTION_KEY, {
+		login: login!,
+		exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS,
+		csrf: crypto.randomUUID(),
+	});
+	return new Response(null, {
+		status: 302,
+		headers: [
+			["Location", "/admin"],
+			["Set-Cookie", setCookie(SESSION_COOKIE, session, SESSION_SECONDS)],
+			["Set-Cookie", setCookie(STATE_COOKIE, "", 0)],
+			["Cache-Control", "no-store"],
+		],
+	});
+}
+
 export function registerAdmin(app: Hono<AppEnv>) {
 	app.get("/admin", async (c) => {
 		const s = await readSession(c);
@@ -240,57 +289,12 @@ export function registerAdmin(app: Hono<AppEnv>) {
 			headers: [
 				["Location", getUpstreamAuthorizeUrl({
 					client_id: c.env.GITHUB_CLIENT_ID,
-					redirect_uri: new URL("/callback/admin", c.req.url).href,
+					redirect_uri: new URL("/callback", c.req.url).href,
 					scope: "", // only needs to learn who you are
 					state,
 					upstream_url: "https://github.com/login/oauth/authorize",
 				})],
 				["Set-Cookie", setCookie(STATE_COOKIE, state, 600)],
-				["Cache-Control", "no-store"],
-			],
-		});
-	});
-
-	app.get("/callback/admin", async (c) => {
-		const state = c.req.query("state") ?? "";
-		const bound = cookie(c.req.raw, STATE_COOKIE);
-		const known = state ? await c.env.OAUTH_KV.get(`admin-state:${state}`) : null;
-		if (!state || !bound || !sameString(bound, state) || !known) {
-			return signInPage("That sign-in expired. Try again.");
-		}
-		await c.env.OAUTH_KV.delete(`admin-state:${state}`); // one use
-
-		const [upstream, err] = await fetchUpstreamAuthToken({
-			client_id: c.env.GITHUB_CLIENT_ID,
-			client_secret: c.env.GITHUB_CLIENT_SECRET,
-			code: c.req.query("code"),
-			redirect_uri: new URL("/callback/admin", c.req.url).href,
-			upstream_url: "https://github.com/login/oauth/access_token",
-		});
-		if (err) return signInPage("GitHub sign-in failed. Try again.");
-
-		const me = await fetch("https://api.github.com/user", {
-			headers: { Authorization: `Bearer ${upstream!.accessToken}`, "User-Agent": "github-extended-mcp" },
-		});
-		const login = me.ok ? ((await me.json()) as { login?: string }).login : undefined;
-		// the github token is dropped here: the panel keeps only a signed cookie
-		if (!isAllowedLogin(login, c.env.ALLOWED_GITHUB_LOGINS)) {
-			console.warn(`rejected admin login attempt from ${login}`);
-			return respond(page("Not allowed", `<main class="bf-container"><h1 class="bf-title">Not allowed</h1><p class="bf-lede">This account cannot use this panel.</p></main>`), 403, {
-				"Set-Cookie": setCookie(STATE_COOKIE, "", 0),
-			});
-		}
-		const session = await signSession(c.env.COOKIE_ENCRYPTION_KEY, {
-			login: login!,
-			exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS,
-			csrf: crypto.randomUUID(),
-		});
-		return new Response(null, {
-			status: 302,
-			headers: [
-				["Location", "/admin"],
-				["Set-Cookie", setCookie(SESSION_COOKIE, session, SESSION_SECONDS)],
-				["Set-Cookie", setCookie(STATE_COOKIE, "", 0)],
 				["Cache-Control", "no-store"],
 			],
 		});

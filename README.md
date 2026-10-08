@@ -99,7 +99,7 @@ All of these are described in [`.dev.vars.example`](.dev.vars.example). Set them
 
 ## Admin panel
 
-Open `https://<your-host>/admin` in a browser. You sign in with GitHub (the same OAuth app, through its own `/callback/admin` path, which GitHub accepts because it sits under your registered `/callback`), and only allowlisted accounts get in. The panel lists every connected client with where it signs in from and when, and lets you:
+Open `https://<your-host>/admin` in a browser. You sign in with GitHub (the same OAuth app and the same registered `/callback` URL, so there is nothing extra to configure), and only allowlisted accounts get in. The panel lists every connected client with where it signs in from and when, and lets you:
 
 - **Terminate** a session. The client loses access and can connect again.
 - **Remove client** to also forget it, so it has to register and be approved again.
@@ -116,6 +116,7 @@ The server is on the public internet, so access is locked down in layers:
 - **No unauthenticated GitHub calls.** Every GraphQL call uses the signed-in user's own GitHub token. There is no fallback token or stored personal access token.
 - **Session is the GitHub session (by default).** MCP access tokens last 12 hours and refresh tokens are off. When it expires, the client has to reconnect, which sends you through GitHub again. Both can be changed, see Optional settings.
 - **OAuth 2.1 with PKCE (S256 only)**, dynamic client registration, and the template's CSRF protection plus signed approval and state cookies.
+- **Sessions can be ended by hand** from the browser admin panel (see above). There are deliberately no MCP tools for auth, so an agent can never list or end sessions.
 - Tokens are never logged or returned in tool results.
 
 ### Scopes
@@ -153,6 +154,6 @@ curl -i -X POST http://localhost:8788/mcp   # 401 with a WWW-Authenticate header
 4. The server issues Claude its own access token, carrying your GitHub token inside it (encrypted).
 5. Claude calls `/mcp` with that token, and tools run against GitHub's GraphQL API as you.
 
-Files: `src/index.ts` (tools and OAuth provider), `src/github.ts` (GraphQL calls), `src/github-handler.ts` (GitHub login and callback), `src/allowlist.ts` (whitelist check), `wrangler.jsonc` (generic config used by the deploy button).
+Files: `src/index.ts` (tools, OAuth provider, session lifetime and refresh), `src/github.ts` (GraphQL calls, PAT-first credentials), `src/github-handler.ts` (GitHub login and callback), `src/admin.ts` (the admin panel), `src/tokenstore.ts` (newest GitHub token per login, encrypted in KV), `src/allowlist.ts` (whitelist check), `src/types.ts` (props and optional settings), `wrangler.jsonc` (generic config used by the deploy button).
 
 Built on Cloudflare's [`workers-oauth-provider`](https://github.com/cloudflare/workers-oauth-provider), the [`agents`](https://github.com/cloudflare/agents) package, and the `remote-mcp-github-oauth` demo from [`cloudflare/ai`](https://github.com/cloudflare/ai).

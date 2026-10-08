@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
 import { Octokit } from "octokit";
-import { registerAdmin } from "./admin";
+import { handleAdminCallback, registerAdmin } from "./admin";
 import { isAllowedLogin } from "./allowlist";
 import type { Props } from "./types";
 import { fetchUpstreamAuthToken, getUpstreamAuthorizeUrl } from "./utils";
@@ -146,6 +146,10 @@ async function redirectToGithub(
  * into a victim's OAuth flow.
  */
 app.get("/callback", async (c) => {
+	// the admin panel login comes back to this same registered callback (see admin.ts)
+	const admin = await handleAdminCallback(c);
+	if (admin) return admin;
+
 	// Validate OAuth state with session binding
 	// This checks both KV storage AND the session cookie
 	let oauthReqInfo: AuthRequest;
