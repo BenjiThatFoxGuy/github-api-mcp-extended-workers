@@ -8,6 +8,7 @@
 //   /admin/terminate     POST: end one session
 //   /admin/remove        POST: end a client's sessions and forget the client
 //   /admin/terminate-all POST: end every session
+//   /admin/remove-all    POST: end every session and forget every registered client
 //   /admin/logout        POST: leave the panel
 //
 // the panel session is its own signed cookie. it never carries a github token: the github token
@@ -163,6 +164,7 @@ const FLASH: Record<string, string> = {
 	terminated: "Session ended.",
 	removed: "Client removed and its sessions ended.",
 	all: "All sessions ended.",
+	removedAll: "All clients removed and their sessions ended.",
 	gone: "That session was already gone.",
 };
 
@@ -208,8 +210,11 @@ async function panel(c: Ctx, s: Session) {
 ${flash ? `<div class="bf-alert" role="status">${esc(flash)}</div>` : ""}
 ${grants.length
 	? `<ul class="bf-list">${rows}</ul>
-<p class="bf-note">Terminate ends a session, but the client can connect again. Remove client also forgets it, so it has to register and be approved again. Changes can take up to a minute to reach every location.</p>
-<form method="post" action="/admin/terminate-all" class="bf-row">${hidden("csrf", s.csrf)}<button class="bf-btn bf-btn--danger" type="submit">Terminate all</button></form>`
+<p class="bf-note">Terminate ends a session, but the client can connect again. Remove client also forgets it, so it has to register and be approved again. Remove all does that for every client. Changes can take up to a minute to reach every location.</p>
+<div class="bf-row">
+<form method="post" action="/admin/terminate-all">${hidden("csrf", s.csrf)}<button class="bf-btn bf-btn--danger" type="submit">Terminate all</button></form>
+<form method="post" action="/admin/remove-all">${hidden("csrf", s.csrf)}<button class="bf-btn bf-btn--danger" type="submit">Remove all</button></form>
+</div>`
 	: `<p class="bf-lede">No clients are connected.</p>`}
 </main>`;
 	const out = `<form method="post" action="/admin/logout">${hidden("csrf", s.csrf)}<span>${esc(s.login)} · </span><button class="bf-btn bf-btn--quiet" type="submit">Sign out</button></form>`;
@@ -337,6 +342,23 @@ export function registerAdmin(app: Hono<AppEnv>) {
 		for (const g of await allGrants(c, s.login)) await c.env.OAUTH_PROVIDER.revokeGrant(g.id, s.login);
 		await deleteTokens(c.env, s.login);
 		return back("all");
+	});
+
+	app.post("/admin/remove-all", async (c) => {
+		const s = await readSession(c);
+		if (!s) return signInPage("Your session ended. Sign in again.");
+		const data = await form(c, s);
+		if (!data) return respond(page("Refused", `<main class="bf-container"><p class="bf-message">Request refused.</p></main>`), 403);
+		for (const g of await allGrants(c, s.login)) await c.env.OAUTH_PROVIDER.revokeGrant(g.id, s.login);
+		// forget every registered client, including ones that never finished connecting
+		let cursor: string | undefined;
+		do {
+			const page = await c.env.OAUTH_PROVIDER.listClients({ limit: 100, cursor });
+			for (const client of page.items) await c.env.OAUTH_PROVIDER.deleteClient(client.clientId);
+			cursor = page.cursor;
+		} while (cursor);
+		await deleteTokens(c.env, s.login);
+		return back("removedAll");
 	});
 
 	app.post("/admin/logout", async (c) => {

@@ -103,7 +103,7 @@ Open `https://<your-host>/admin` in a browser. You sign in with GitHub (the same
 
 - **Terminate** a session. The client loses access and can connect again.
 - **Remove client** to also forget it, so it has to register and be approved again.
-- **Terminate all** sessions.
+- **Terminate all** sessions, or **Remove all** to also forget every registered client.
 
 It is a web page on purpose and there is no MCP tool for any of this, so an agent can never list, create or end sessions. The panel session is its own signed cookie that lasts 30 minutes, every action needs a CSRF token, and it never holds a GitHub token. Because Workers KV is eventually consistent, a termination can take up to about a minute to reach every Cloudflare location.
 
