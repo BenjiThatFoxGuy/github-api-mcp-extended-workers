@@ -5,11 +5,21 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "github-api-mcp-extended-workers",
+  "account_id": "93bf3308c594a16c80dfde7ad2621e34",
   "main": "src/index.ts",
+  "workers_dev": false,
+  "routes": [{ "pattern": "ghmcp.benjifox.gay", "custom_domain": true }],
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
-  // secrets (GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, COOKIE_ENCRYPTION_KEY, ALLOWED_GITHUB_LOGINS)
-  // are set at deploy time or with `wrangler secret put`. see README.
+  /**
+	 * Note: Use secrets to store sensitive data.
+	 * https://developers.cloudflare.com/workers/configuration/secrets/
+	 * 
+	 * Commands to set secrets:
+	 * npx wrangler secret put GITHUB_CLIENT_ID
+	 * npx wrangler secret put GITHUB_CLIENT_SECRET
+	 * npx wrangler secret put COOKIE_ENCRYPTION_KEY
+	 */
   "migrations": [
     {
       "new_sqlite_classes": ["MyMCP"],
@@ -26,9 +36,13 @@
   },
   "kv_namespaces": [
     {
-      "binding": "OAUTH_KV"
+      "binding": "OAUTH_KV",
+      "id": "c12deba708d9472dbc78d008ae34ca02"
     }
   ],
+  "vars": {
+    "ALLOWED_GITHUB_LOGINS": "BenjiThatFoxGuy"
+  },
   "observability": {
     "enabled": true
   },
