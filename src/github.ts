@@ -115,34 +115,47 @@ export async function getListItems(token: string, listId: string, first: number,
 	};
 }
 
-// github has no "which lists is this repo in" field, so we walk every list's items.
-// returns repoId -> set of listIds. fine at personal scale (lists are capped at 32).
+// github has no "which lists is this repo in" field, so we read every list's items.
+// returns repoId -> set of listIds. one query fetches the first 100 items of every list at once;
+// only lists with more than 100 items need extra (parallel) page fetches.
+type MemberPage = { nodes: { id?: string }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } };
+
 export async function membershipMap(token: string): Promise<Map<string, Set<string>>> {
-	const lists = await listLists(token);
 	const map = new Map<string, Set<string>>();
-	for (const list of lists) {
-		let after: string | undefined;
-		do {
-			const d = await gql<{ node: { items: Page<{ id?: string }> } }>(
-				token,
-				`query($id: ID!, $after: String) {
-					node(id: $id) { ... on UserList { items(first: 100, after: $after) {
-						pageInfo { hasNextPage endCursor }
-						nodes { ... on Repository { id } }
-					} } }
-				}`,
-				{ id: list.id, after },
-			);
-			for (const n of d.node.items.nodes) {
-				if (!n.id) continue;
-				if (!map.has(n.id)) map.set(n.id, new Set());
-				map.get(n.id)!.add(list.id);
+	const add = (listId: string, page: MemberPage) => {
+		for (const n of page.nodes) {
+			if (!n.id) continue;
+			if (!map.has(n.id)) map.set(n.id, new Set());
+			map.get(n.id)!.add(listId);
+		}
+	};
+	const d = await gql<{ viewer: { lists: { nodes: { id: string; items: MemberPage }[] } } }>(
+		token,
+		`{ viewer { lists(first: 100) { nodes { id items(first: 100) {
+			pageInfo { hasNextPage endCursor }
+			nodes { ... on Repository { id } }
+		} } } } }`,
+	);
+	await Promise.all(
+		d.viewer.lists.nodes.map(async (list) => {
+			add(list.id, list.items);
+			let page = list.items;
+			while (page.pageInfo.hasNextPage) {
+				const more = await gql<{ node: { items: MemberPage } }>(
+					token,
+					`query($id: ID!, $after: String) {
+						node(id: $id) { ... on UserList { items(first: 100, after: $after) {
+							pageInfo { hasNextPage endCursor }
+							nodes { ... on Repository { id } }
+						} } }
+					}`,
+					{ id: list.id, after: page.pageInfo.endCursor },
+				);
+				page = more.node.items;
+				add(list.id, page);
 			}
-			after = d.node.items.pageInfo.hasNextPage
-				? (d.node.items.pageInfo.endCursor ?? undefined)
-				: undefined;
-		} while (after);
-	}
+		}),
+	);
 	return map;
 }
 
@@ -150,22 +163,43 @@ export async function membershipMap(token: string): Promise<Map<string, Set<stri
 // read current membership once, apply add/remove per repo, then write each merged result.
 export type Assignment = { repoId: string; add: string[]; remove: string[] };
 
-export async function mergeRepoLists(token: string, assignments: Assignment[]) {
-	const members = await membershipMap(token);
-	const results = [];
-	for (const { repoId, add, remove } of assignments) {
-		const current = members.get(repoId) ?? new Set<string>();
-		const next = new Set(current);
-		for (const id of add) next.add(id);
-		for (const id of remove) next.delete(id);
-		await gql(
-			token,
-			`mutation($itemId: ID!, $listIds: [ID!]!) {
-				updateUserListsForItem(input: {itemId: $itemId, listIds: $listIds}) { clientMutationId }
-			}`,
-			{ itemId: repoId, listIds: [...next] },
+export async function mergeRepoLists(token: string, input: Assignment[]) {
+	// fold duplicate repoIds together so parallel writes can't race on stale membership
+	const byRepo = new Map<string, Assignment>();
+	for (const a of input) {
+		const prev = byRepo.get(a.repoId);
+		byRepo.set(
+			a.repoId,
+			prev
+				? { repoId: a.repoId, add: [...prev.add, ...a.add], remove: [...prev.remove, ...a.remove] }
+				: a,
 		);
-		results.push({ repoId, before: [...current], after: [...next] });
+	}
+	const assignments = [...byRepo.values()];
+	const members = await membershipMap(token);
+	// bounded parallelism so a 50-repo batch doesn't trip github's secondary rate limits
+	const results: { repoId: string; before: string[]; after: string[] }[] = [];
+	const CONCURRENCY = 5;
+	for (let i = 0; i < assignments.length; i += CONCURRENCY) {
+		const chunk = assignments.slice(i, i + CONCURRENCY);
+		results.push(
+			...(await Promise.all(
+				chunk.map(async ({ repoId, add, remove }) => {
+					const current = members.get(repoId) ?? new Set<string>();
+					const next = new Set(current);
+					for (const id of add) next.add(id);
+					for (const id of remove) next.delete(id);
+					await gql(
+						token,
+						`mutation($itemId: ID!, $listIds: [ID!]!) {
+							updateUserListsForItem(input: {itemId: $itemId, listIds: $listIds}) { clientMutationId }
+						}`,
+						{ itemId: repoId, listIds: [...next] },
+					);
+					return { repoId, before: [...current], after: [...next] };
+				}),
+			)),
+		);
 	}
 	return results;
 }

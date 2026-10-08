@@ -120,6 +120,21 @@ export class MyMCP extends McpAgent<Env, Record<string, never>, Props> {
 				),
 		);
 
+		this.server.tool(
+			"delete_list",
+			"Permanently delete a Star List (the repos stay starred). Requires confirm: true.",
+			{ listId: z.string(), confirm: z.literal(true).describe("must be true to delete") },
+			{ readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+			async ({ listId }) => {
+				await gql(
+					token,
+					`mutation($input: DeleteUserListInput!) { deleteUserList(input: $input) { clientMutationId } }`,
+					{ input: { listId } },
+				);
+				return json({ ok: true });
+			},
+		);
+
 		// github's mutation REPLACES a repo's lists. we expose add/remove and merge server-side so
 		// existing memberships can't be clobbered by accident.
 		this.server.tool(
