@@ -6,6 +6,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "github-stars-mcp",
   "main": "src/index.ts",
+  "workers_dev": false,
+  "routes": [{ "pattern": "ghmcp.benjifox.gay", "custom_domain": true }],
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
   /**
