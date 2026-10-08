@@ -5,6 +5,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "github-stars-mcp",
+  "account_id": "93bf3308c594a16c80dfde7ad2621e34",
   "main": "src/index.ts",
   "workers_dev": false,
   "routes": [{ "pattern": "ghmcp.benjifox.gay", "custom_domain": true }],
@@ -36,7 +37,7 @@
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",
-      "id": "<Add-KV-ID>"
+      "id": "c12deba708d9472dbc78d008ae34ca02"
     }
   ],
   "vars": {
