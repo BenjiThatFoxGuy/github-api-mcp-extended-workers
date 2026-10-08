@@ -3,7 +3,8 @@ import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provid
 import { Hono } from "hono";
 import { Octokit } from "octokit";
 import { isAllowedLogin } from "./allowlist";
-import { fetchUpstreamAuthToken, getUpstreamAuthorizeUrl, type Props } from "./utils";
+import type { Props } from "./types";
+import { fetchUpstreamAuthToken, getUpstreamAuthorizeUrl } from "./utils";
 import {
 	addApprovedClient,
 	bindStateToSession,
@@ -160,7 +161,7 @@ app.get("/callback", async (c) => {
 	}
 
 	// Exchange the code for an access token
-	const [accessToken, errResponse] = await fetchUpstreamAuthToken({
+	const [upstream, errResponse] = await fetchUpstreamAuthToken({
 		client_id: c.env.GITHUB_CLIENT_ID,
 		client_secret: c.env.GITHUB_CLIENT_SECRET,
 		code: c.req.query("code"),
@@ -170,7 +171,7 @@ app.get("/callback", async (c) => {
 	if (errResponse) return errResponse;
 
 	// Fetch the user info from GitHub
-	const user = await new Octokit({ auth: accessToken }).rest.users.getAuthenticated();
+	const user = await new Octokit({ auth: upstream!.accessToken }).rest.users.getAuthenticated();
 	const { login, name, email } = user.data;
 
 	// allowlist: reject anyone else before any token is issued to the mcp client
@@ -186,7 +187,10 @@ app.get("/callback", async (c) => {
 		},
 		// This will be available on this.props inside MyMCP
 		props: {
-			accessToken,
+			accessToken: upstream!.accessToken,
+			refreshToken: upstream!.refreshToken,
+			accessTokenExpiresAt: upstream!.accessTokenExpiresAt,
+			refreshTokenExpiresAt: upstream!.refreshTokenExpiresAt,
 			email,
 			login,
 			name,

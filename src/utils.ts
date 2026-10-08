@@ -31,17 +31,36 @@ export function getUpstreamAuthorizeUrl({
 	return upstream.href;
 }
 
+// what github hands back from /login/oauth/access_token. refresh fields only exist when the
+// oauth app has "expiring user tokens" turned on; otherwise the token never expires.
+export type UpstreamToken = {
+	accessToken: string;
+	refreshToken?: string;
+	accessTokenExpiresAt?: number; // epoch ms
+	refreshTokenExpiresAt?: number; // epoch ms
+};
+
+function parseUpstreamToken(body: URLSearchParams | FormData): UpstreamToken | null {
+	const accessToken = body.get("access_token") as string | null;
+	if (!accessToken) return null;
+	const num = (k: string) => {
+		const v = Number(body.get(k));
+		return Number.isFinite(v) && v > 0 ? v : undefined;
+	};
+	const exp = num("expires_in");
+	const rexp = num("refresh_token_expires_in");
+	return {
+		accessToken,
+		refreshToken: (body.get("refresh_token") as string | null) || undefined,
+		accessTokenExpiresAt: exp ? Date.now() + exp * 1000 : undefined,
+		refreshTokenExpiresAt: rexp ? Date.now() + rexp * 1000 : undefined,
+	};
+}
+
 /**
- * Fetches an authorization token from an upstream service.
+ * Exchanges the authorization code for github tokens.
  *
- * @param {Object} options
- * @param {string} options.client_id - The client ID of the application.
- * @param {string} options.client_secret - The client secret of the application.
- * @param {string} options.code - The authorization code.
- * @param {string} options.redirect_uri - The redirect URI of the application.
- * @param {string} options.upstream_url - The token endpoint URL of the upstream service.
- *
- * @returns {Promise<[string, null] | [null, Response]>} A promise that resolves to an array containing the access token or an error response.
+ * @returns [token info, null] on success or [null, error response]
  */
 export async function fetchUpstreamAuthToken({
 	client_id,
@@ -55,7 +74,7 @@ export async function fetchUpstreamAuthToken({
 	client_secret: string;
 	redirect_uri: string;
 	client_id: string;
-}): Promise<[string, null] | [null, Response]> {
+}): Promise<[UpstreamToken, null] | [null, Response]> {
 	if (!code) {
 		return [null, new Response("Missing code", { status: 400 })];
 	}
@@ -68,22 +87,41 @@ export async function fetchUpstreamAuthToken({
 		method: "POST",
 	});
 	if (!resp.ok) {
-		console.log(await resp.text());
+		// do not log the body: it can echo request details
+		console.log(`upstream token exchange failed: http ${resp.status}`);
 		return [null, new Response("Failed to fetch access token", { status: 500 })];
 	}
-	const body = await resp.formData();
-	const accessToken = body.get("access_token") as string;
-	if (!accessToken) {
+	const token = parseUpstreamToken(await resp.formData());
+	if (!token) {
 		return [null, new Response("Missing access token", { status: 400 })];
 	}
-	return [accessToken, null];
+	return [token, null];
 }
 
-// Context from the auth process, encrypted & stored in the auth token
-// and provided to the DurableMCP as this.props
-export type Props = {
-	login: string;
-	name: string;
-	email: string;
-	accessToken: string;
-};
+/**
+ * Trades a github refresh token for a new access token (and a new refresh token: github rotates
+ * them). returns null when github refuses, which means the session cannot continue.
+ */
+export async function refreshUpstreamToken({
+	client_id,
+	client_secret,
+	refresh_token,
+}: {
+	client_id: string;
+	client_secret: string;
+	refresh_token: string;
+}): Promise<UpstreamToken | null> {
+	const resp = await fetch("https://github.com/login/oauth/access_token", {
+		method: "POST",
+		headers: { "Content-Type": "application/x-www-form-urlencoded" },
+		body: new URLSearchParams({
+			client_id,
+			client_secret,
+			grant_type: "refresh_token",
+			refresh_token,
+		}).toString(),
+	});
+	if (!resp.ok) return null;
+	// github answers 200 with an error body (error=bad_refresh_token) on failure, so parse it
+	return parseUpstreamToken(await resp.formData());
+}

@@ -17,10 +17,11 @@ Stars and lists (current):
 | `get_list_items` | read | Repos inside one list, paginated. |
 | `create_list` | write | Create a list (name, description, private or public). |
 | `update_list` | write | Rename or edit a list. |
-| `set_repo_lists` | write | Add repos to lists and/or remove them, many repos per call. |
+| `set_repo_lists` | write | Add repos to lists and/or remove them, many repos per call. Each repo reports its own result. |
 | `star_repo` | write | Star a repo. |
 | `unstar_repo` | destructive | Unstar a repo (its list memberships go with it). |
 | `delete_list` | destructive | Delete a list. Needs `confirm: true`. Repos stay starred. |
+| `auth_status` | read | Which credential is active (PAT or OAuth login) and when each expires. Never returns tokens. |
 
 GitHub's `updateUserListsForItem` **replaces** a repo's whole set of lists. `set_repo_lists` reads the repo's current lists first and merges your adds and removes, so existing memberships are never wiped by accident.
 
@@ -88,6 +89,14 @@ npx wrangler secret bulk .prod.vars
 
 `.prod.vars` is gitignored. Do not commit it. If you attach a custom domain, add a `routes` entry with `"custom_domain": true` to your own config copy (see `wrangler.prod.jsonc` for an example) and use that domain in the callback URL and connector URL.
 
+## Optional settings
+
+All of these are described in [`.dev.vars.example`](.dev.vars.example). Set them as secrets or variables next to the four required values.
+
+**`GITHUB_PAT`** (optional personal access token). You do not need it. Some organizations turn on "OAuth App access restrictions", and for repos owned by those orgs GitHub refuses list changes made through an OAuth login, even though the same change works on your own repos and in the GitHub web UI. A classic PAT is not subject to that restriction. When one is configured it is tried first, and if GitHub rejects it (for example because it expired) the server falls back to your OAuth login automatically. It is only used when it belongs to the account that signed in. Create a classic token with the `user` scope (required for list changes) and `public_repo` (or `repo` for private repos), give it an expiry, and authorize it for any SAML SSO org. The `auth_status` tool shows which credential is active and when the PAT expires.
+
+**Session lifetime.** By default a Claude session lasts 12 hours and then reconnects through GitHub. `SESSION_TTL_SECONDS` changes that, `REFRESH_TOKEN_TTL_SECONDS` lets Claude renew a session without a new login (the server also refreshes GitHub's token if your OAuth app has expiring user tokens enabled), and `TIE_SESSION_TO_GITHUB_TOKEN=false` makes the session lifetime independent of GitHub's token.
+
 ## Security
 
 The server is on the public internet, so access is locked down in layers:
@@ -95,7 +104,7 @@ The server is on the public internet, so access is locked down in layers:
 - **Login whitelist.** After GitHub sign-in, the callback checks your login against `ALLOWED_GITHUB_LOGINS` and returns 403 before any token is issued. An empty or missing list means nobody can log in.
 - **Re-checked per session.** When an MCP session starts, the server asks GitHub who the token belongs to and checks the whitelist again. A revoked token or the wrong account gets zero tools.
 - **No unauthenticated GitHub calls.** Every GraphQL call uses the signed-in user's own GitHub token. There is no fallback token or stored personal access token.
-- **Session is the GitHub session.** MCP access tokens last 12 hours and refresh tokens are disabled. When it expires, the client has to reconnect, which sends you through GitHub again.
+- **Session is the GitHub session (by default).** MCP access tokens last 12 hours and refresh tokens are off. When it expires, the client has to reconnect, which sends you through GitHub again. Both can be changed, see Optional settings.
 - **OAuth 2.1 with PKCE (S256 only)**, dynamic client registration, and the template's CSRF protection plus signed approval and state cookies.
 - Tokens are never logged or returned in tool results.
 

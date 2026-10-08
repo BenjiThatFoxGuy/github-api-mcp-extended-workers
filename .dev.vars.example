@@ -1,4 +1,45 @@
+# --- required -------------------------------------------------------------------------------
 GITHUB_CLIENT_ID=<client id of your github oauth app>
 GITHUB_CLIENT_SECRET=<client secret of your github oauth app>
 COOKIE_ENCRYPTION_KEY=<output of: openssl rand -hex 32>
 ALLOWED_GITHUB_LOGINS=<your github username, comma separated for several>
+
+# --- optional: personal access token (PAT) ---------------------------------------------------
+# you do NOT need this. the server works with just the github login above.
+#
+# why you might want one: some organizations turn on "OAuth App access restrictions". for repos
+# owned by those orgs, github refuses list changes made through an oauth login, even though the
+# same change works fine on your own repos and in the github web ui. the error looks like
+#   "the `<org>` organization has enabled OAuth App access restrictions"
+# a classic PAT is not subject to that restriction, so with one configured the server uses it
+# first and those repos work too.
+#
+# how it behaves:
+#   - the PAT is tried first. if github rejects it (for example it expired), the server falls
+#     back to your oauth login automatically, so an expired PAT never locks you out.
+#   - it is only used when it belongs to the same github account that signed in. a PAT for a
+#     different account is ignored.
+#   - give it an expiry. the date shows up in the auth_status tool.
+#
+# create one at: github > settings > developer settings > personal access tokens > tokens (classic)
+#   scopes:  user          (required for creating, editing and deleting star lists)
+#            public_repo   (public repos). use "repo" instead if you also want private repos.
+#   if an org uses saml sso, click "configure sso" on the token and authorize that org.
+#   fine-grained tokens are not recommended: they are not known to support star list changes.
+# GITHUB_PAT=<classic personal access token>
+
+# --- optional: session lifetime ----------------------------------------------------------------
+# by default a claude session lasts 12 hours and then has to reconnect through github, so the
+# session is the github session. these change that.
+#
+# how long a claude access token lives, in seconds (default 43200 = 12h)
+# SESSION_TTL_SECONDS=43200
+#
+# let claude renew its session without a new github login, in seconds (default 0 = off, so
+# expiry means reconnecting). if your github oauth app has "expire user authorization tokens"
+# turned on, the server refreshes the github token for you when claude renews.
+# REFRESH_TOKEN_TTL_SECONDS=2592000
+#
+# "true" (default): a session never outlives the github token. set "false" to make the session
+# lifetime independent of github's token, which makes sense when a PAT does the real work.
+# TIE_SESSION_TO_GITHUB_TOKEN=true
